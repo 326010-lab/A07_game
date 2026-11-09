@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Rhythm - Web Music Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #050510 0%, #1a1a3a 100%);
+            color: white;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            overflow: hidden;
+            touch-action: none; /* スマホでのスクロールやズームを防止 */
+            user-select: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            display: block;
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.1);
+        }
+
+        /* UI Overlays */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .hud-text {
+            font-family: 'Orbitron', sans-serif;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+        }
+
+        #start-screen, #result-screen {
+            pointer-events: auto;
+            background: rgba(5, 5, 16, 0.85);
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-neon {
+            background: transparent;
+            border: 2px solid #00ffff;
+            color: #00ffff;
+            text-shadow: 0 0 5px #00ffff;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.4) inset, 0 0 15px rgba(0, 255, 255, 0.4);
+            transition: all 0.2s ease;
+        }
+
+        .btn-neon:hover, .btn-neon:active {
+            background: #00ffff;
+            color: #000;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.8);
+            transform: scale(1.05);
+        }
+
+        /* Judgement Text Animation */
+        @keyframes pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 0; }
+        }
+        .anim-pop {
+            animation: pop 0.5s ease-out forwards;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- メインの描画領域 -->
+        <canvas id="game-canvas"></canvas>
+
+        <!-- UI レイヤー -->
+        <div id="ui-layer" class="p-6">
+            <div class="flex justify-between items-start w-full max-w-2xl mx-auto">
+                <div>
+                    <div class="text-sm text-cyan-300 tracking-wider">SCORE</div>
+                    <div id="score-display" class="text-3xl hud-text">0</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm text-cyan-300 tracking-wider">COMBO</div>
+                    <div id="combo-display" class="text-4xl hud-text text-pink-400">0</div>
+                </div>
+            </div>
+
+            <!-- 判定表示 (PERFECT, GREAT etc) -->
+            <div class="flex-grow flex items-center justify-center pointer-events-none">
+                <div id="judgement-display" class="text-5xl font-bold tracking-widest text-center opacity-0" style="text-shadow: 0 0 20px currentColor;"></div>
+            </div>
+            
+            <div class="h-32"></div> <!-- 下部の余白 -->
+        </div>
+
+        <!-- スタート画面 -->
+        <div id="start-screen" class="absolute inset-0 flex flex-col items-center justify-center z-50">
+            <h1 class="text-6xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-pink-500 font-['Orbitron']" style="filter: drop-shadow(0 0 10px rgba(0,255,255,0.5));">NEON RHYTHM</h1>
+            <p class="mb-8 text-gray-300 text-center max-w-md">
+                降ってくるノーツが下のラインに重なるタイミングでタップ！<br>
+                <span class="text-cyan-400 font-bold">PC:</span> D, F, J, K キー<br>
+                <span class="text-pink-400 font-bold">スマホ:</span> レーンのタップ
+            </p>
+            <button id="start-btn" class="btn-neon px-12 py-4 rounded-full text-2xl font-bold tracking-widest">START</button>
+        </div>
+
+        <!-- リザルト画面 -->
+        <div id="result-screen" class="absolute inset-0 flex flex-col items-center justify-center z-50 hidden">
+            <h2 class="text-5xl font-bold mb-6 text-pink-400 hud-text">FINISH!</h2>
+            <div class="grid grid-cols-2 gap-4 text-xl mb-8 w-64">
+                <div class="text-gray-400 text-left">Score</div>
+                <div id="result-score" class="text-right font-bold text-cyan-300">0</div>
+                
+                <div class="text-yellow-400 text-left">Perfect</div>
+                <div id="result-perfect" class="text-right font-bold">0</div>
+                
+                <div class="text-green-400 text-left">Great</div>
+                <div id="result-great" class="text-right font-bold">0</div>
+                
+                <div class="text-gray-500 text-left">Miss</div>
+                <div id="result-miss" class="text-right font-bold">0</div>
+                
+                <div class="text-pink-400 text-left mt-2 border-t border-gray-600 pt-2">Max Combo</div>
+                <div id="result-max-combo" class="text-right font-bold mt-2 border-t border-gray-600 pt-2">0</div>
+            </div>
+            <button id="retry-btn" class="btn-neon px-10 py-3 rounded-full text-xl font-bold tracking-widest">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 定数・設定 ---
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const LANES = 4;
+        const LANE_KEYS = ['d', 'f', 'j', 'k'];
+        const LANE_COLORS = ['#ff0055', '#00aaff', '#00aaff', '#ff0055']; // レーンごとの色 (外側ピンク、内側青)
+        
+        // 判定の閾値 (秒)
+        const JUDGE_PERFECT = 0.05;
+        const JUDGE_GREAT = 0.10;
+        const JUDGE_GOOD = 0.15;
+
+        // ノーツの落下速度 (画面高さを何秒で通過するか)
+        const NOTE_SPEED = 1.5; 
+
+        // --- 状態変数 ---
+        let width, height;
+        let laneWidth;
+        let startX;
+        let hitLineY;
+        
+        let audioCtx;
+        let isPlaying = false;
+        let startTime = 0;
+        let nextNoteIndex = 0;
+        let notes = [];         // 全ノーツデータ
+        let activeNotes = [];   // 画面上に存在するノーツ
+        let particles = [];     // エフェクト用
+        let activeKeys = [false, false, false, false]; // キーの押下状態（視覚用）
+
+        let stats = {
+            score: 0,
+            combo: 0,
+            maxCombo: 0,
+            perfect: 0,
+            great: 0,
+            good: 0,
+            miss: 0
+        };
+
+        // --- UI要素 ---
+        const uiScore = document.getElementById('score-display');
+        const uiCombo = document.getElementById('combo-display');
+        const uiJudge = document.getElementById('judgement-display');
+        const screenStart = document.getElementById('start-screen');
+        const screenResult = document.getElementById('result-screen');
+
+        // --- リサイズ処理 ---
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+
+            // レーンの幅を画面サイズに応じて決定 (最大400px)
+            const maxGameWidth = Math.min(width * 0.9, 500);
+            laneWidth = maxGameWidth / LANES;
+            startX = (width - maxGameWidth) / 2;
+            
+            // 判定ラインの位置 (下から15%)
+            hitLineY = height * 0.85;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- ノーツデータ（譜面）の生成 ---
+        function generateMap() {
+            notes = [];
+            let time = 2.0; // 最初のノーツが来るまでのオフセット
+            const bpm = 130;
+            const beatInterval = 60 / bpm;
+            
+            // 約30秒間のランダムな譜面を生成
+            for (let i = 0; i < 60; i++) {
+                // 1拍、半拍、または同時押しのパターン
+                const r = Math.random();
+                if (r < 0.1) {
+                    // 同時押し
+                    let l1 = Math.floor(Math.random() * 4);
+                    let l2 = (l1 + 1 + Math.floor(Math.random() * 3)) % 4;
+                    notes.push({ lane: l1, targetTime: time, hit: false });
+                    notes.push({ lane: l2, targetTime: time, hit: false });
+                    time += beatInterval;
+                } else if (r < 0.4) {
+                    // 8分音符（半拍）
+                    notes.push({ lane: Math.floor(Math.random() * 4), targetTime: time, hit: false });
+                    time += beatInterval / 2;
+                } else {
+                    // 4分音符（1拍）
+                    notes.push({ lane: Math.floor(Math.random() * 4), targetTime: time, hit: false });
+                    time += beatInterval;
+                }
+            }
+            // 終了判定用のダミーノーツ（見えない）
+            notes.push({ lane: 0, targetTime: time + 2.0, isEndMark: true });
+        }
+
+        // --- シンセサイザー (Web Audio API) による自動伴奏 ---
+        // 外部ファイルを使わず、譜面に合わせたビートを鳴らします
+        function scheduleAudio() {
+            if (!audioCtx) return;
+            const lookahead = 0.1; // 0.1秒先までスケジュール
+            
+            while (nextNoteIndex < notes.length && notes[nextNoteIndex].targetTime < audioCtx.currentTime - startTime + lookahead) {
+                const note = notes[nextNoteIndex];
+                if (!note.isEndMark) {
+                    // 打楽器系の音（キックドラムっぽい音）を合成
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    
+                    const t = startTime + note.targetTime;
+                    
+                    // ベース音
+                    osc.frequency.setValueAtTime(150, t);
+                    osc.frequency.exponentialRampToValueAtTime(0.01, t + 0.1);
+                    
+                    gain.gain.setValueAtTime(0.3, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+                    
+                    osc.start(t);
+                    osc.stop(t + 0.1);
+                }
+                nextNoteIndex++;
+            }
+        }
+
+        // --- ゲームロジック ---
+
+        function startGame() {
+            stats = { score: 0, combo: 0, maxCombo: 0, perfect: 0, great: 0, good: 0, miss: 0 };
+            updateUI();
+            
+            generateMap();
+            activeNotes = [...notes]; // コピー
+            nextNoteIndex = 0;
+            particles = [];
+            
+            screenStart.classList.add('hidden');
+            screenResult.classList.add('hidden');
+            
+            // AudioContextの初期化・再開 (ユーザーアクション時必須)
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            startTime = audioCtx.currentTime;
+            isPlaying = true;
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            isPlaying = false;
+            screenResult.classList.remove('hidden');
+            document.getElementById('result-score').innerText = stats.score;
+            document.getElementById('result-perfect').innerText = stats.perfect;
+            document.getElementById('result-great').innerText = stats.great;
+            document.getElementById('result-miss').innerText = stats.miss;
+            document.getElementById('result-max-combo').innerText = stats.maxCombo;
+        }
+
+        // 判定処理
+        function processHit(laneIndex) {
+            if (!isPlaying) return;
+            
+            const currentTime = audioCtx.currentTime - startTime;
+            
+            // そのレーンで一番近い未処理のノーツを探す
+            let targetNote = null;
+            let targetIndex = -1;
+            
+            // 判定ラインの前後一定範囲内のノーツのみチェック
+            for (let i = 0; i < activeNotes.length; i++) {
+                const note = activeNotes[i];
+                if (!note.hit && !note.isEndMark && note.lane === laneIndex) {
+                    const diff = note.targetTime - currentTime;
+                    // ミス判定より手前（過ぎていない）、かつ画面内に来ているもの
+                    if (diff > -JUDGE_GOOD && diff < 0.5) { 
+                        targetNote = note;
+                        targetIndex = i;
+                        break; // 配列は時間順なので最初に見つかったものが最寄り
+                    }
+                }
+            }
+
+            // エフェクト（押下のアニメーション用）
+            activeKeys[laneIndex] = true;
+            setTimeout(() => activeKeys[laneIndex] = false, 100);
+            createTapEffect(laneIndex);
+
+            if (targetNote) {
+                const diff = Math.abs(targetNote.targetTime - currentTime);
+                targetNote.hit = true; // 処理済みマーク
+                
+                let judgement = "";
+                let color = "";
+                
+                if (diff <= JUDGE_PERFECT) {
+                    judgement = "PERFECT"; color = "#ffea00";
+                    stats.perfect++; stats.combo++; stats.score += 1000 + (stats.combo * 10);
+                    createHitParticles(laneIndex, targetNote.targetTime, color);
+                } else if (diff <= JUDGE_GREAT) {
+                    judgement = "GREAT"; color = "#00ffcc";
+                    stats.great++; stats.combo++; stats.score += 500 + (stats.combo * 5);
+                    createHitParticles(laneIndex, targetNote.targetTime, color);
+                } else if (diff <= JUDGE_GOOD) {
+                    judgement = "GOOD"; color = "#00ccff";
+                    stats.good++; stats.combo++; stats.score += 100;
+                } else {
+                    judgement = "MISS"; color = "#ff0055";
+                    stats.miss++; stats.combo = 0;
+                }
+                
+                stats.maxCombo = Math.max(stats.maxCombo, stats.combo);
+                showJudgement(judgement, color);
+                updateUI();
+            }
+        }
+
+        function showJudgement(text, color) {
+            uiJudge.innerText = text;
+            uiJudge.style.color = color;
+            uiJudge.classList.remove('anim-pop');
+            void uiJudge.offsetWidth; // リフロー強制 (アニメーション再起動のため)
+            uiJudge.classList.add('anim-pop');
+        }
+
+        function updateUI() {
+            uiScore.innerText = stats.score;
+            uiCombo.innerText = stats.combo;
+            if (stats.combo >= 10) {
+                uiCombo.classList.add('text-pink-400');
+                uiCombo.classList.remove('text-gray-400');
+            } else {
+                uiCombo.classList.remove('text-pink-400');
+                uiCombo.classList.add('text-gray-400');
+            }
+        }
+
+        // --- 描画とエフェクト ---
+
+        function createHitParticles(lane, targetTime, color) {
+            const x = startX + lane * laneWidth + laneWidth / 2;
+            const y = hitLineY;
+            for (let i = 0; i < 15; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10 - 2, // 上方向へ飛びやすく
+                    life: 1.0,
+                    color: color,
+                    size: Math.random() * 4 + 2
+                });
+            }
+        }
+
+        function createTapEffect(lane) {
+             const x = startX + lane * laneWidth + laneWidth / 2;
+             particles.push({
+                 type: 'ring',
+                 x: x, y: hitLineY,
+                 life: 1.0,
+                 radius: 10,
+                 color: LANE_COLORS[lane]
+             });
+        }
+
+        function updateAndDrawParticles(dt) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.life -= dt * 3; // 消滅速度
+                
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.globalAlpha = p.life;
+                
+                if (p.type === 'ring') {
+                    p.radius += dt * 100;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                    ctx.strokeStyle = p.color;
+                    ctx.lineWidth = 3;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = p.color;
+                    ctx.stroke();
+                } else {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    ctx.fillStyle = p.color;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        function drawGame() {
+            // 背景クリア
+            ctx.clearRect(0, 0, width, height);
+
+            // --- レーンの描画 ---
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+            for (let i = 0; i < LANES; i++) {
+                const x = startX + i * laneWidth;
+                
+                // 押下時のハイライト
+                if (activeKeys[i]) {
+                    const grad = ctx.createLinearGradient(0, hitLineY, 0, 0);
+                    grad.addColorStop(0, LANE_COLORS[i]);
+                    grad.addColorStop(1, 'transparent');
+                    ctx.fillStyle = grad;
+                    ctx.globalAlpha = 0.5;
+                    ctx.fillRect(x, 0, laneWidth - 2, height);
+                    ctx.globalAlpha = 1.0;
+                }
+                
+                // レーンの境界線
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+            // 右端の境界線
+            ctx.beginPath(); ctx.moveTo(startX + LANES * laneWidth, 0); ctx.lineTo(startX + LANES * laneWidth, height); ctx.stroke();
+
+            // --- 判定ラインの描画 ---
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#00ffff';
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(startX, hitLineY);
+            ctx.lineTo(startX + LANES * laneWidth, hitLineY);
+            ctx.stroke();
+            ctx.shadowBlur = 0; // リセット
+
+            // ターゲットマーカー（各レーンの中心）
+            for (let i = 0; i < LANES; i++) {
+                const cx = startX + i * laneWidth + laneWidth / 2;
+                ctx.beginPath();
+                ctx.arc(cx, hitLineY, 5, 0, Math.PI * 2);
+                ctx.fillStyle = LANE_COLORS[i];
+                ctx.fill();
+                
+                // キーガイド描画 (PC向け)
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.font = '16px Orbitron';
+                ctx.textAlign = 'center';
+                ctx.fillText(LANE_KEYS[i].toUpperCase(), cx, hitLineY + 30);
+            }
+
+            // --- ノーツの描画と更新 ---
+            const currentTime = audioCtx.currentTime - startTime;
+            
+            for (let i = 0; i < activeNotes.length; i++) {
+                const note = activeNotes[i];
+                if (note.hit) continue;
+
+                const timeDiff = note.targetTime - currentTime;
+                
+                // 終了判定
+                if (note.isEndMark) {
+                    if (timeDiff < 0) endGame();
+                    continue;
+                }
+
+                // 画面外（見逃し）の処理
+                if (timeDiff < -JUDGE_GOOD) {
+                    note.hit = true;
+                    stats.miss++;
+                    stats.combo = 0;
+                    showJudgement("MISS", "#ff0055");
+                    updateUI();
+                    continue;
+                }
+
+                // Y座標の計算 (時間は目標時間からの差分、位置はヒットラインからの差分)
+                // noteSpeedが1のとき、1秒前に画面の一番上(y=0)にいるイメージ
+                const distance = timeDiff * (height / NOTE_SPEED);
+                const y = hitLineY - distance;
+
+                // 画面内にある場合のみ描画
+                if (y > -100 && y < height + 100) {
+                    const x = startX + note.lane * laneWidth;
+                    const nWidth = laneWidth - 4;
+                    const nHeight = 20; // ノーツの厚み
+                    
+                    const cx = x + 2 + nWidth / 2;
+                    const cy = y - nHeight / 2;
+
+                    ctx.save();
+                    // ノーツのスタイル (サイバー風の光る角丸矩形)
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = LANE_COLORS[note.lane];
+                    
+                    // 中心のバー
+                    ctx.beginPath();
+                    ctx.roundRect(x + 2, y - nHeight / 2, nWidth, nHeight, 8);
+                    ctx.fill();
+                    
+                    // 内側のアクセントライン
+                    ctx.fillStyle = LANE_COLORS[note.lane];
+                    ctx.shadowBlur = 0;
+                    ctx.beginPath();
+                    ctx.roundRect(x + 10, y - 2, nWidth - 16, 4, 2);
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+            }
+        }
+
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            if (!isPlaying) return;
+            
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            scheduleAudio();
+            drawGame();
+            updateAndDrawParticles(dt);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- 入力制御 ---
+
+        // キーボード
+        window.addEventListener('keydown', (e) => {
+            if (e.repeat) return; // 長押しによる連続発火を防止
+            const key = e.key.toLowerCase();
+            const laneIndex = LANE_KEYS.indexOf(key);
+            if (laneIndex !== -1) {
+                processHit(laneIndex);
+            }
+        });
+
+        // タッチパネル (スマホ対応)
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // スクロール防止
+            if (!isPlaying) return;
+
+            const rect = canvas.getBoundingClientRect();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                // Canvas内の相対X座標
+                const touchX = touch.clientX - rect.left;
+                
+                // どのレーンをタップしたか判定
+                if (touchX >= startX && touchX <= startX + LANES * laneWidth) {
+                    const laneIndex = Math.floor((touchX - startX) / laneWidth);
+                    processHit(laneIndex);
+                }
+            }
+        }, { passive: false });
+
+        // --- イベントリスナー ---
+        document.getElementById('start-btn').addEventListener('click', startGame);
+        document.getElementById('retry-btn').addEventListener('click', startGame);
+
+        // 初期描画
+        ctx.fillStyle = '#050510';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    </script>
+</body>
+</html>
